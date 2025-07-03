@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendar for Parents Call</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Light gray background */
+            color: #374151; /* Dark gray text */
+        }
+        .calendar-container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 1.5rem;
+            background-color: #ffffff;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 0.5rem;
+        }
+        .day-header {
+            text-align: center;
+            font-weight: 600;
+            padding: 0.5rem;
+            background-color: #e5e7eb; /* Lighter gray for headers */
+            border-radius: 0.5rem;
+        }
+        .day-cell {
+            padding: 0.75rem 0.5rem;
+            border-radius: 0.5rem;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            min-height: 80px; /* Ensure consistent height */
+            box-shadow: inset 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+        .day-number {
+            font-weight: 700;
+            font-size: 1.125rem; /* text-lg */
+            margin-bottom: 0.25rem;
+        }
+        .status-text {
+            font-size: 0.75rem; /* text-xs */
+            font-weight: 600;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.5rem;
+            white-space: nowrap; /* Prevent text wrapping */
+        }
+        /* Status Colors */
+        .status-training { /* This class might be less used now due to the new rule */
+            background-color: #fee2e2; /* Red-100 */
+            color: #991b1b; /* Red-800 */
+        }
+        .status-break { /* This class might be less used now due to the new rule */
+            background-color: #e0f2fe; /* Blue-100 */
+            color: #0369a1; /* Blue-800 */
+        }
+        .status-holiday {
+            background-color: #fee2e2; /* Red-100 */
+            color: #991b1b; /* Red-800 */
+        }
+        .status-off { /* Used for "No training" / "OFF" days */
+            background-color: #fef3c7; /* Yellow-100 */
+            color: #92400e; /* Yellow-800 */
+        }
+        .status-past {
+            background-color: #d1fae5; /* Green-100 */
+            color: #065f46; /* Green-800 */
+        }
+        .status-parents-call { /* Parents Call color */
+            background-color: #e9d5ff; /* Purple-100 */
+            color: #6b21a8; /* Purple-800 */
+        }
+        .empty-cell {
+            background-color: #f9fafb; /* Lighter gray for empty cells */
+            box-shadow: none;
+        }
+        .month-header {
+            font-size: 1.75rem; /* text-3xl */
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 1.5rem;
+            color: #1f2937; /* Darker gray for month titles */
+        }
+    </style>
+</head>
+<body>
+    <div class="calendar-container">
+        <h1 class="text-4xl font-extrabold text-center text-gray-900 mb-8">Calendar for Parents Call</h1>
+        <div id="calendar"></div>
+    </div>
+
+    <script>
+        // --- Configuration ---
+        const START_DATE = new Date('2025-07-08T00:00:00'); // Training starts July 8, 2025
+        const END_DATE = new Date('2025-08-31T23:59:59'); // Display calendar until end of August 2025
+
+        // Specific holidays (days explicitly marked as holidays, not for training)
+        const specificHolidays = [
+            '2025-07-07', // July 7, 2025
+            '2025-08-15', // August 15, 2025
+            '2025-08-16', // August 16, 2025
+            '2025-08-26', // NEW: August 26, 2025 (now a Holiday)
+            '2025-08-27'  // August 27, 2025
+        ];
+
+        // Dates that are explicitly working days, overriding any holiday rules
+        const workingDaysOverride = [];
+
+        // Dates that are explicitly "No training" days, overriding regular training schedule
+        // Only includes dates *before* the general "Parents Call" rule applies (July 3rd)
+        const specificNoTrainingDays = [
+            '2025-07-01', // July 1, 2025
+            '2025-07-02'  // July 2, 2025
+        ];
+
+        // Dates that are explicitly "OFF" days (all Sundays, August 6th removed as it's now Parents Call)
+        const specificOffDays = []; // August 6th removed from here
+
+        // Dynamically add all Sundays within the calendar range to specificOffDays
+        function populateAllSundaysAsOff() {
+            let currentDate = new Date(START_DATE.getFullYear(), START_DATE.getMonth(), 1);
+            currentDate.setHours(0,0,0,0); // Normalize to start of day
+
+            while (currentDate <= END_DATE) {
+                if (currentDate.getDay() === 0) { // If it's a Sunday
+                    const formattedDate = formatDate(currentDate);
+                    if (!specificOffDays.includes(formattedDate)) {
+                        specificOffDays.push(formattedDate);
+                    }
+                }
+                currentDate.setDate(currentDate.getDate() + 1); // Move to the next day
+            }
+            specificOffDays.sort(); // Sort to keep it tidy
+        }
+        populateAllSundaysAsOff();
+
+
+        // --- Helper Functions ---
+
+        /**
+         * Formats a Date object to 'YYYY-MM-DD' string.
+         * @param {Date} date - The date object.
+         * @returns {string} Formatted date string.
+         */
+        function formatDate(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        /**
+         * Checks if a given date is a specific holiday or a first/third Saturday.
+         * This function now also checks for `workingDaysOverride`.
+         * @param {Date} date - The date to check.
+         * @returns {boolean} True if it's a holiday, false otherwise.
+         */
+        function isHoliday(date) {
+            const formattedDate = formatDate(date);
+
+            // If the date is explicitly listed as a working day, it's not a holiday
+            if (workingDaysOverride.includes(formattedDate)) {
+                return false;
+            }
+
+            // Check for specific holidays
+            if (specificHolidays.includes(formattedDate)) {
+                return true;
+            }
+
+            // Check for first and third Saturdays
+            if (date.getDay() === 6) { // Saturday
+                const dayOfMonth = date.getDate();
+                const firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+                const firstSaturday = new Date(firstDayOfMonth);
+                while (firstSaturday.getDay() !== 6) {
+                    firstSaturday.setDate(firstSaturday.getDate() + 1);
+                }
+
+                // Calculate the week number of the Saturday
+                const weekNumber = Math.ceil((dayOfMonth - firstSaturday.getDate() + 1) / 7);
+                if (weekNumber === 1 || weekNumber === 3) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Determines the training days for a given week based on Monday's holiday status.
+         * @param {Date} monday - The Monday of the week.
+         * @returns {number[]} An array of day indices (0=Sunday, 1=Monday, ..., 6=Saturday) for training.
+         */
+        function getTrainingDaysForWeek(monday) {
+            // Create mutable date objects for calculations
+            const currentMonday = new Date(monday);
+            currentMonday.setHours(0,0,0,0); // Normalize to start of day for accurate holiday check
+
+            // Check if Monday is a holiday (including specific holidays and 1st/3rd Saturdays)
+            // The `isHoliday` function now correctly handles `workingDaysOverride`
+            if (isHoliday(currentMonday)) {
+                // Monday is a holiday: Training on Tuesday, Wednesday, Friday, Saturday
+                return [2, 3, 5, 6]; // Tuesday, Wednesday, Friday, Saturday
+            } else {
+                // Monday is not a holiday: Training on Monday, Tuesday, Thursday, Friday
+                return [1, 2, 4, 5]; // Monday, Tuesday, Thursday, Friday
+            }
+        }
+
+        // --- Calendar Generation ---
+
+        const calendarEl = document.getElementById('calendar');
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+        // --- Pre-calculate OFF Weeks ---
+        // This map will store the formatted Monday date string of each 'OFF' week from the 2-on-1-off rule.
+        const offWeeksMap = new Map();
+        let tempConsecutiveTrainingWeeks = 0;
+        let tempNextWeekIsOff = false; // Flag to indicate if the *next* week should be an off week
+
+        // Start the temporary date for pre-calculation from the actual START_DATE
+        let tempDateForOffCalc = new Date(START_DATE);
+        tempDateForOffCalc.setHours(0,0,0,0);
+
+        // Find the Monday of the START_DATE's week for consistent week iteration
+        const startDayOfWeek = tempDateForOffCalc.getDay(); // 0=Sunday, 1=Monday...
+        let currentWeekMondayForOffCalc = new Date(tempDateForOffCalc);
+        currentWeekMondayForOffCalc.setDate(tempDateForOffCalc.getDate() - (startDayOfWeek === 0 ? 6 : startDayOfWeek - 1));
+        currentWeekMondayForOffCalc.setHours(0,0,0,0);
+
+        // Loop through weeks from the Monday of START_DATE's week up to END_DATE
+        while (currentWeekMondayForOffCalc <= END_DATE) {
+            if (tempNextWeekIsOff) {
+                // If `tempNextWeekIsOff` is true, this `currentWeekMondayForOffCalc` marks the start of an OFF week.
+                offWeeksMap.set(formatDate(currentWeekMondayForOffCalc), true);
+                tempConsecutiveTrainingWeeks = 0; // Reset counter after the OFF week
+                tempNextWeekIsOff = false; // Reset flag for the next cycle
+            } else {
+                // Determine if this week (starting from currentWeekMondayForOffCalc) has effective training days.
+                // Effective training means it's a designated training day AND it's not a holiday AND it's on or after START_DATE.
+                const weekTrainingDaysIndices = getTrainingDaysForWeek(currentWeekMondayForOffCalc);
+                let hasEffectiveTrainingThisWeek = false;
+                for (let i = 0; i < 7; i++) {
+                    const dayInWeek = new Date(currentWeekMondayForOffCalc);
+                    dayInWeek.setDate(currentWeekMondayForOffCalc.getDate() + i);
+                    dayInWeek.setHours(0,0,0,0);
+
+                    const formattedDayInWeek = formatDate(dayInWeek);
+
+                    // If it's a specific "No training" day OR a specific "OFF" day, it doesn't count as effective training
+                    // Note: Parents Call days are now determined later in the main loop, not here for effective training calculation
+                    if (specificNoTrainingDays.includes(formattedDayInWeek) || specificOffDays.includes(formattedDayInWeek)) {
+                        continue; // Skip this day for effective training calculation
+                    }
+
+                    // Only consider days that are on or after the actual START_DATE
+                    if (dayInWeek >= START_DATE && weekTrainingDaysIndices.includes(dayInWeek.getDay()) && !isHoliday(dayInWeek)) {
+                        hasEffectiveTrainingThisWeek = true;
+                        break;
+                    }
+                }
+
+                if (hasEffectiveTrainingThisWeek) {
+                    tempConsecutiveTrainingWeeks++;
+                    if (tempConsecutiveTrainingWeeks === 2) {
+                        tempNextWeekIsOff = true; // Mark the *next* week as off
+                    }
+                } else {
+                    tempConsecutiveTrainingWeeks = 0; // Reset if no effective training this week
+                }
+            }
+            // Move to the next Monday
+            currentWeekMondayForOffCalc.setDate(currentWeekMondayForOffCalc.getDate() + 7);
+        }
+
+
+        // Loop through months for calendar display
+        for (let d = new Date(START_DATE.getFullYear(), START_DATE.getMonth(), 1); d <= END_DATE; d.setMonth(d.getMonth() + 1)) {
+            const currentMonth = d.getMonth();
+            const currentYear = d.getFullYear();
+
+            // Add month header
+            const monthHeader = document.createElement('h2');
+            monthHeader.className = 'month-header';
+            monthHeader.textContent = new Date(currentYear, currentMonth).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+            calendarEl.appendChild(monthHeader);
+
+            // Add day headers (Sun, Mon, Tue...)
+            const dayHeadersContainer = document.createElement('div');
+            dayHeadersContainer.className = 'calendar-grid mb-2';
+            dayNames.forEach(dayName => {
+                const header = document.createElement('div');
+                header.className = 'day-header';
+                header.textContent = dayName.substring(0, 3); // Abbreviate day names
+                dayHeadersContainer.appendChild(header);
+            });
+            calendarEl.appendChild(dayHeadersContainer);
+
+            const monthGrid = document.createElement('div');
+            monthGrid.className = 'calendar-grid';
+            calendarEl.appendChild(monthGrid);
+
+            // Get the first day of the month and its weekday (0-6)
+            const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
+            const startingDay = firstDayOfMonth.getDay(); // 0 for Sunday, 1 for Monday...
+
+            // Add empty cells for days before the 1st of the month
+            for (let i = 0; i < startingDay; i++) {
+                const emptyCell = document.createElement('div');
+                emptyCell.className = 'day-cell empty-cell';
+                monthGrid.appendChild(emptyCell);
+            }
+
+            // Get today's date for dynamic coloring
+            const today = new Date();
+            today.setHours(0, 0, 0, 0); // Normalize today's date to start of day
+
+            // Loop through each day of the month
+            const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+            for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
+                const currentDate = new Date(currentYear, currentMonth, dayNum);
+                currentDate.setHours(0, 0, 0, 0); // Normalize current date to start of day for comparison
+                const formattedCurrentDate = formatDate(currentDate);
+
+                const dayCell = document.createElement('div');
+                dayCell.className = 'day-cell';
+
+                const dayNumberEl = document.createElement('div');
+                dayNumberEl.className = 'day-number';
+                dayNumberEl.textContent = dayNum;
+                dayCell.appendChild(dayNumberEl);
+
+                const statusEl = document.createElement('div');
+                statusEl.className = 'status-text';
+                dayCell.appendChild(statusEl);
+
+                // --- Determine Day Status ---
+                let status = '';
+                let statusClass = '';
+
+                // If the date is in the past relative to *today*
+                if (currentDate < today) {
+                    status = 'Past'; // All past days become 'Past'
+                    statusClass = 'status-past';
+                } else {
+                    // If the date is today or in the future
+                    // Order of precedence for current/future days:
+                    // 1. Explicit OFF days (Sundays)
+                    // 2. Explicit Holidays (July 7, Aug 15, 16, 26, 27)
+                    // 3. Specific No Training days (July 1, 2)
+                    // 4. General "Parents Call" rule for days >= July 3rd
+                    //    This will now also apply to August 6th, as it's no longer 'OFF'
+
+                    if (specificOffDays.includes(formattedCurrentDate)) {
+                        status = 'OFF';
+                        statusClass = 'status-off';
+                    } else if (specificHolidays.includes(formattedCurrentDate)) {
+                        status = 'Holiday';
+                        statusClass = 'status-holiday';
+                    } else if (specificNoTrainingDays.includes(formattedCurrentDate)) {
+                        status = 'No training';
+                        statusClass = 'status-off';
+                    } else if (currentDate >= new Date('2025-07-03T00:00:00')) {
+                        // This catches all remaining days from July 3rd onwards
+                        // that are not explicit OFF, Holiday, or specificNoTrainingDays (July 1,2)
+                        status = 'Parents Call';
+                        statusClass = 'status-parents-call';
+                    } else {
+                        // This 'else' block would only be hit for dates between START_DATE and July 3rd
+                        // that are NOT specificNoTrainingDays, specificOffDays, or specificHolidays.
+                        // Given START_DATE is July 8, and July 1-2 are specificNoTrainingDays, this block is practically unreachable for future dates.
+                        // However, keeping it for robustness in case START_DATE or specific dates change.
+                        const dayOfWeek = currentDate.getDay();
+                        const mondayOfCurrentDateWeek = new Date(currentDate);
+                        mondayOfCurrentDateWeek.setDate(currentDate.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+                        mondayOfCurrentDateWeek.setHours(0,0,0,0);
+
+                        if (offWeeksMap.has(formatDate(mondayOfCurrentDateWeek))) {
+                            status = 'No training';
+                            statusClass = 'status-off';
+                        } else {
+                            const trainingDays = getTrainingDaysForWeek(mondayOfCurrentDateWeek);
+                            if (trainingDays.includes(currentDate.getDay())) {
+                                status = 'Training';
+                                statusClass = 'status-training';
+                            } else {
+                                status = 'Break';
+                                statusClass = 'status-break';
+                            }
+                        }
+                    }
+                }
+
+                statusEl.textContent = status;
+                statusEl.classList.add(statusClass);
+                dayCell.classList.add(statusClass); // Add to cell for background color
+
+                monthGrid.appendChild(dayCell);
+            }
+        }
+    </script>
+</body>
+</html>
